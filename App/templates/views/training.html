@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+
+{% block title %}Training Jobs{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="bg-gray-800 rounded-lg shadow-lg p-6">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-white">Training Jobs</h1>
+                <p class="text-gray-400">Monitor and manage your model training jobs</p>
+            </div>
+        </div>
+
+        <!-- Training Jobs List -->
+        <div class="space-y-4">
+            {% for job in jobs %}
+            <a href="{% url 'app:training_detail' job.id %}" 
+               class="block bg-gray-900/50 rounded-lg p-4 border border-red-800/30 hover:border-red-600/40 transition-all">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 bg-red-600/20 rounded-lg flex items-center justify-center">
+                            <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="font-medium text-white">{{ job.model.name }}</h3>
+                            <p class="text-sm text-gray-400">{{ job.dataset.name }} • {{ job.started_at|date:"M d, Y H:i" }}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <span class="inline-block {% if job.status == 'completed' %}bg-green-900/30 text-green-400{% elif job.status == 'running' %}bg-amber-900/30 text-amber-400{% elif job.status == 'failed' %}bg-red-900/30 text-red-400{% else %}bg-gray-700/30 text-gray-400{% endif %} text-xs px-2 py-1 rounded-full">
+                            {{ job.status|title }}
+                        </span>
+                        {% if job.status == 'running' %}
+                        <div class="mt-2">
+                            <div class="w-32 bg-gray-800 rounded-full h-1.5">
+                                <div class="bg-gradient-to-r from-red-600 to-red-400 h-1.5 rounded-full" 
+                                     style="width: {{ job.progress }}%"></div>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1">{{ job.progress|floatformat:1 }}%</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </a>
+            {% empty %}
+            <div class="text-center py-12">
+                <div class="w-16 h-16 bg-gray-900/50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                </div>
+                <h3 class="text-lg font-medium text-white mb-2">No Training Jobs</h3>
+                <p class="text-gray-400 mb-4">You haven't started any training jobs yet.</p>
+                <a href="{% url 'app:models' %}" 
+                   class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                    Start Training
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %} 

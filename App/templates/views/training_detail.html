@@ -1,0 +1,300 @@
+{% extends 'base.html' %}
+
+{% block title %}Training Details - {{ job.model.name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="bg-gray-800 rounded-lg shadow-lg p-6">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-white">Training Details</h1>
+                <p class="text-gray-400">{{ job.model.name }} - {{ job.model.get_model_type_display }}</p>
+            </div>
+            <div class="flex items-center space-x-4">
+                <span class="text-xs px-2 py-1 rounded-full {% if job.status == 'completed' %}bg-green-900/30 text-green-400{% elif job.status == 'running' %}bg-amber-900/30 text-amber-400{% elif job.status == 'failed' %}bg-red-900/30 text-red-400{% else %}bg-gray-700/30 text-gray-400{% endif %}">
+                    {{ job.status|title }}
+                </span>
+                <a href="{% url 'app:model_detail' job.model.id %}" 
+                   class="text-red-400 hover:text-red-300 text-sm font-medium transition">
+                    Back to Model
+                </a>
+            </div>
+        </div>
+
+        <!-- Training Overview -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <!-- Model Info -->
+            <div class="bg-gray-900/50 rounded-lg p-4 border border-red-800/30">
+                <h2 class="text-lg font-medium text-white mb-4">Model Information</h2>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Name</span>
+                        <span class="text-white">{{ job.model.name }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Type</span>
+                        <span class="text-white">{{ job.model.get_model_type_display }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Status</span>
+                        <span class="text-white">{{ job.model.get_status_display }}</span>
+                    </div>
+                    {% if job.model.accuracy %}
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Accuracy</span>
+                        <span class="text-white">{{ job.model.accuracy|floatformat:2 }}%</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Dataset Info -->
+            <div class="bg-gray-900/50 rounded-lg p-4 border border-red-800/30">
+                <h2 class="text-lg font-medium text-white mb-4">Dataset Information</h2>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Name</span>
+                        <span class="text-white">{{ job.dataset.name }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Features</span>
+                        <span class="text-white">{{ job.dataset.features|length }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Target</span>
+                        <span class="text-white">{{ job.dataset.target }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">File Size</span>
+                        <span class="text-white">{{ job.dataset.file_size|filesizeformat }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Training Progress -->
+        <div class="bg-gray-900/50 rounded-lg p-4 border border-red-800/30 mb-6">
+            <h2 class="text-lg font-medium text-white mb-4">Training Progress</h2>
+            <div class="space-y-4">
+                <!-- Progress Bar -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm text-gray-400">Progress</span>
+                        <span class="text-sm text-white">{{ job.progress|floatformat:1 }}%</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-2">
+                        <div class="bg-gradient-to-r from-red-600 to-red-400 h-2 rounded-full" 
+                             style="width: {{ job.progress }}%"></div>
+                    </div>
+                </div>
+
+                <!-- Timeline -->
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-400">Started</span>
+                        <span class="text-sm text-white">{{ job.started_at|date:"M d, Y H:i:s" }}</span>
+                    </div>
+                    {% if job.completed_at %}
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-400">Completed</span>
+                        <span class="text-sm text-white">{{ job.completed_at|date:"M d, Y H:i:s" }}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-400">Duration</span>
+                        <span class="text-sm text-white">{{ job.completed_at|timeuntil:job.started_at }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Cost Variation Chart -->
+        {% if job.status == 'completed' and job.model.parameters.training_history %}
+        <div class="bg-gray-900/50 rounded-lg p-4 border border-red-800/30 mb-6">
+            <h2 class="text-lg font-medium text-white mb-4">Cost Variation During Training</h2>
+            <div class="h-80">
+                <canvas id="costVariationChart"></canvas>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            try {
+                const trainingHistory = {{ job.model.parameters.training_history|safe }};
+                const ctx = document.getElementById('costVariationChart').getContext('2d');
+                
+                // Calculate statistics
+                const costs = trainingHistory.map(h => h.cost);
+                const minCost = Math.min(...costs);
+                const maxCost = Math.max(...costs);
+                const avgCost = costs.reduce((a, b) => a + b, 0) / costs.length;
+                
+                // Create gradient
+                const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+                gradient.addColorStop(0, 'rgba(239, 68, 68, 0.3)');
+                gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
+                
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: trainingHistory.map(h => h.iteration),
+                        datasets: [{
+                            label: 'Cost',
+                            data: trainingHistory.map(h => h.cost),
+                            borderColor: '#ef4444',
+                            backgroundColor: gradient,
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                titleColor: '#fff',
+                                bodyColor: '#fff',
+                                borderColor: '#ef4444',
+                                borderWidth: 1,
+                                padding: 10,
+                                displayColors: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        return `Cost: ${context.parsed.y.toFixed(4)}`;
+                                    },
+                                    title: function(context) {
+                                        return `Iteration ${context[0].label}`;
+                                    }
+                                }
+                            },
+                            annotation: {
+                                annotations: {
+                                    minLine: {
+                                        type: 'line',
+                                        yMin: minCost,
+                                        yMax: minCost,
+                                        borderColor: 'rgba(34, 197, 94, 0.5)',
+                                        borderWidth: 1,
+                                        borderDash: [5, 5],
+                                        label: {
+                                            content: `Min: ${minCost.toFixed(4)}`,
+                                            enabled: true,
+                                            position: 'start',
+                                            backgroundColor: 'rgba(34, 197, 94, 0.8)'
+                                        }
+                                    },
+                                    avgLine: {
+                                        type: 'line',
+                                        yMin: avgCost,
+                                        yMax: avgCost,
+                                        borderColor: 'rgba(234, 179, 8, 0.5)',
+                                        borderWidth: 1,
+                                        borderDash: [5, 5],
+                                        label: {
+                                            content: `Avg: ${avgCost.toFixed(4)}`,
+                                            enabled: true,
+                                            position: 'start',
+                                            backgroundColor: 'rgba(234, 179, 8, 0.8)'
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: false,
+                                title: {
+                                    display: true,
+                                    text: 'Cost',
+                                    color: '#fff',
+                                    font: {
+                                        weight: 'bold',
+                                        size: 12
+                                    }
+                                },
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.1)',
+                                    drawBorder: false
+                                },
+                                ticks: {
+                                    color: '#fff',
+                                    callback: function(value) {
+                                        return value.toFixed(4);
+                                    }
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Iteration',
+                                    color: '#fff',
+                                    font: {
+                                        weight: 'bold',
+                                        size: 12
+                                    }
+                                },
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.1)',
+                                    drawBorder: false
+                                },
+                                ticks: {
+                                    color: '#fff',
+                                    maxTicksLimit: 8
+                                }
+                            }
+                        },
+                        animation: {
+                            duration: 1000,
+                            easing: 'easeInOutQuart'
+                        }
+                    }
+                });
+            } 
+                catch (error) {
+                console.error('Error initializing chart:', error);
+            }
+        });
+        </script>
+        {% endif %}
+
+        <!-- Error Message -->
+        {% if job.error_message %}
+        <div class="bg-red-900/20 border border-red-800/30 rounded-lg p-4 mb-6">
+            <h2 class="text-lg font-medium text-red-400 mb-2">Error Details</h2>
+            <p class="text-sm text-red-300">{{ job.error_message }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Model Parameters -->
+        <div class="bg-gray-900/50 rounded-lg p-4 border border-red-800/30">
+            <h2 class="text-lg font-medium text-white mb-4">Model Parameters</h2>
+            <div class="space-y-3">
+                {% for key, value in job.model.parameters.items %}
+                {% if key != 'training_history' %}
+                <div class="flex justify-between">
+                    <span class="text-gray-400">{{ key|title }}</span>
+                    <span class="text-white">{{ value }}</span>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

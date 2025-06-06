@@ -1,0 +1,342 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Train Model - {{ model.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4 px-4">
+    <div class="row mb-4">
+        <div class="col">
+            <nav aria-label="breadcrumb" class="bg-transparent">
+                <ol class="breadcrumb mb-2">
+                    <li class="breadcrumb-item"><a href="{% url 'app:models' %}" class="text-decoration-none text-light">Models</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'app:model_detail' model.id %}" class="text-decoration-none text-light">{{ model.name }}</a></li>
+                    <li class="breadcrumb-item active text-light">Train</li>
+                </ol>
+            </nav>
+            <h2 class="h3 mb-4 fw-bold text-light">Train Model: {{ model.name }}</h2>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Training Parameters -->
+        <div class="col-md-4">
+            <div class="card border-0 shadow-lg h-100 bg-dark text-light">
+                <div class="card-header bg-dark border-0 py-3">
+                    <h5 class="card-title mb-0 fw-semibold text-primary">
+                        <i class="fas fa-sliders-h me-2"></i>Training Parameters
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" id="trainingForm">
+                        {% csrf_token %}
+                        
+                        <div class="mb-4">
+                            <label for="dataset" class="form-label fw-medium text-light">Select Dataset</label>
+                            <select class="form-select form-select-lg bg-dark text-light border-secondary" id="dataset" name="dataset" required>
+                                <option value="">Choose a dataset...</option>
+                                {% for dataset in datasets %}
+                                <option value="{{ dataset.id }}">{{ dataset.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label for="alpha" class="form-label fw-medium text-light">Learning Rate (α)</label>
+                            <input type="number" class="form-control form-control-lg bg-dark text-light border-secondary" id="alpha" name="alpha" 
+                                   value="{{ model.parameters.alpha }}" 
+                                     required>
+                            <div class="form-text text-muted">Controls how quickly the model learns (0.0001 to 1)</div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label for="iterations" class="form-label fw-medium text-light">Number of Iterations</label>
+                            <input type="number" class="form-control form-control-lg bg-dark text-light border-secondary" id="iterations" name="iterations" 
+                                   value="{{ model.parameters.iterations|default:'1000' }}" 
+                                   min="100" required>
+                            <div class="form-text text-muted">Number of training iterations (100 to 10000)</div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary btn-lg w-100 py-3 fw-semibold" id="trainButton">
+                            <i class="fas fa-play me-2"></i>Start Training
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Training History -->
+        <div class="col-md-8">
+            <div class="card border-0 shadow-lg mb-4 bg-dark text-light">
+                <div class="card-header bg-dark border-0 py-3">
+                    <h5 class="card-title mb-0 fw-semibold text-primary">
+                        <i class="fas fa-history me-2"></i>Training Details
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if last_job %}
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center mb-3">
+                                <i class="fas fa-clock text-muted me-2"></i>
+                                <div>
+                                    <small class="text-muted d-block">Started</small>
+                                    <span class="fw-medium text-light">{{ last_job.started_at|default:"Not started" }}</span>
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center mb-3">
+                                <i class="fas fa-check-circle text-muted me-2"></i>
+                                <div>
+                                    <small class="text-muted d-block">Completed</small>
+                                    <span class="fw-medium text-light">{{ last_job.completed_at|default:"Not completed" }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        {% if last_job.status == 'completed' %}
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center mb-3">
+                                <i class="fas fa-chart-line text-muted me-2"></i>
+                                <div>
+                                    <small class="text-muted d-block">Final Accuracy</small>
+                                    <span class="fw-medium text-light">{{ last_job.model.accuracy|floatformat:2 }}%</span>
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center mb-3">
+                                <i class="fas fa-hourglass-half text-muted me-2"></i>
+                                <div>
+                                    <small class="text-muted d-block">Training Time</small>
+                                    <span class="fw-medium text-light">
+                                        {% if last_job.started_at and last_job.completed_at %}
+                                            {{ last_job.completed_at|timeuntil:last_job.started_at }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    {% if last_job.status == 'completed' %}
+                    <div class="card bg-dark border-secondary mb-4">
+                        <div class="card-header bg-dark border-secondary py-3">
+                            <h6 class="mb-0 fw-semibold text-light">
+                                <i class="fas fa-chart-line me-2"></i>Cost Variation During Training
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="costVariationChart" height="200"></canvas>
+                        </div>
+                    </div>
+
+                    <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const trainingHistory = JSON.parse('{{ last_job.model.parameters.training_history|safe }}');
+                        const ctx = document.getElementById('costVariationChart').getContext('2d');
+                        
+                        // Calculate statistics
+                        const costs = trainingHistory.map(h => h.cost);
+                        const minCost = Math.min(...costs);
+                        const maxCost = Math.max(...costs);
+                        const avgCost = costs.reduce((a, b) => a + b, 0) / costs.length;
+                        
+                        // Create gradient
+                        const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+                        gradient.addColorStop(0, 'rgba(67, 97, 238, 0.3)');
+                        gradient.addColorStop(1, 'rgba(67, 97, 238, 0)');
+                        
+                        new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: trainingHistory.map(h => h.iteration),
+                                datasets: [{
+                                    label: 'Cost',
+                                    data: trainingHistory.map(h => h.cost),
+                                    borderColor: '#4361ee',
+                                    backgroundColor: gradient,
+                                    tension: 0.4,
+                                    fill: true,
+                                    pointRadius: 0,
+                                    pointHoverRadius: 4,
+                                    borderWidth: 2
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                interaction: {
+                                    intersect: false,
+                                    mode: 'index'
+                                },
+                                plugins: {
+                                    legend: {
+                                        display: false
+                                    },
+                                    tooltip: {
+                                        mode: 'index',
+                                        intersect: false,
+                                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                        titleColor: '#fff',
+                                        bodyColor: '#fff',
+                                        borderColor: '#4361ee',
+                                        borderWidth: 1,
+                                        padding: 10,
+                                        displayColors: false,
+                                        callbacks: {
+                                            label: function(context) {
+                                                return `Cost: ${context.parsed.y.toFixed(4)}`;
+                                            },
+                                            title: function(context) {
+                                                return `Iteration ${context[0].label}`;
+                                            }
+                                        }
+                                    },
+                                    annotation: {
+                                        annotations: {
+                                            minLine: {
+                                                type: 'line',
+                                                yMin: minCost,
+                                                yMax: minCost,
+                                                borderColor: 'rgba(255, 99, 132, 0.5)',
+                                                borderWidth: 1,
+                                                borderDash: [5, 5],
+                                                label: {
+                                                    content: `Min: ${minCost.toFixed(4)}`,
+                                                    enabled: true,
+                                                    position: 'start',
+                                                    backgroundColor: 'rgba(255, 99, 132, 0.8)'
+                                                }
+                                            },
+                                            avgLine: {
+                                                type: 'line',
+                                                yMin: avgCost,
+                                                yMax: avgCost,
+                                                borderColor: 'rgba(255, 193, 7, 0.5)',
+                                                borderWidth: 1,
+                                                borderDash: [5, 5],
+                                                label: {
+                                                    content: `Avg: ${avgCost.toFixed(4)}`,
+                                                    enabled: true,
+                                                    position: 'start',
+                                                    backgroundColor: 'rgba(255, 193, 7, 0.8)'
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                scales: {
+                                    y: {
+                                        beginAtZero: false,
+                                        title: {
+                                            display: true,
+                                            text: 'Cost',
+                                            color: '#fff',
+                                            font: {
+                                                weight: 'bold',
+                                                size: 12
+                                            }
+                                        },
+                                        grid: {
+                                            color: 'rgba(255, 255, 255, 0.1)',
+                                            drawBorder: false
+                                        },
+                                        ticks: {
+                                            color: '#fff',
+                                            callback: function(value) {
+                                                return value.toFixed(4);
+                                            }
+                                        }
+                                    },
+                                    x: {
+                                        title: {
+                                            display: true,
+                                            text: 'Iteration',
+                                            color: '#fff',
+                                            font: {
+                                                weight: 'bold',
+                                                size: 12
+                                            }
+                                        },
+                                        grid: {
+                                            color: 'rgba(255, 255, 255, 0.1)',
+                                            drawBorder: false
+                                        },
+                                        ticks: {
+                                            color: '#fff',
+                                            maxTicksLimit: 8
+                                        }
+                                    }
+                                },
+                                animation: {
+                                    duration: 1000,
+                                    easing: 'easeInOutQuart'
+                                }
+                            }
+                        });
+                    });
+                    </script>
+                    {% endif %}
+
+                    {% if last_job.error_message %}
+                    <div class="alert alert-danger mt-3 border-0 bg-danger bg-opacity-25">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        <strong>Error:</strong>
+                        <p class="mb-0 mt-2">{{ last_job.error_message }}</p>
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <p class="text-muted mb-0">No training history available.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('trainingForm').addEventListener('submit', function(e) {
+    const trainButton = document.getElementById('trainButton');
+    trainButton.disabled = true;
+    trainButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Training...';
+});
+</script>
+
+<style>
+/* Custom styles for dark theme */
+.form-control:focus, .form-select:focus {
+    background-color: #1a1a1a !important;
+    border-color: #4361ee !important;
+    color: #fff !important;
+    box-shadow: 0 0 0 0.25rem rgba(67, 97, 238, 0.25);
+}
+
+.form-control::placeholder {
+    color: #6c757d !important;
+}
+
+.form-select option {
+    background-color: #1a1a1a;
+    color: #fff;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #4361ee;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #3651d4;
+}
+</style>
+{% endblock %} 
