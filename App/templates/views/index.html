@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% load humanize %}
 {% block content %}
      <div class="space-y-6">
           <!-- Welcome Section -->
           <div class="bg-ai-panel/60 backdrop-blur-sm rounded-xl p-6 border border-red-800/20">
             <div class="flex items-center justify-between mb-4">
               <div>
-                <h1 class="text-2xl font-bold text-white mb-2">Welcome back, {{ request.user.first_name|default:"AI Engineer" }}!</h1>
+                <h1 class="text-2xl font-bold text-white mb-2">Welcome back, {{ request.user.username }}!</h1>
                 <p class="text-gray-400">Monitor your AI models and training progress</p>
               </div>
               <div class="text-right">
@@ -25,9 +26,9 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
                   </svg>
                 </div>
-                <span class="text-xs text-red-400 bg-red-900/30 px-2 py-1 rounded-full">+12%</span>
+                <span class="text-xs text-red-400 bg-red-900/30 px-2 py-1 rounded-full">Active</span>
               </div>
-              <h3 class="text-2xl font-bold text-white mb-1">24</h3>
+              <h3 class="text-2xl font-bold text-white mb-1">{{ active_models }}</h3>
               <p class="text-gray-400 text-sm">Active Models</p>
             </div>
 
@@ -41,7 +42,7 @@
                 </div>
                 <span class="text-xs text-amber-400 bg-amber-900/30 px-2 py-1 rounded-full">Running</span>
               </div>
-              <h3 class="text-2xl font-bold text-white mb-1">3</h3>
+              <h3 class="text-2xl font-bold text-white mb-1">{{ running_jobs }}</h3>
               <p class="text-gray-400 text-sm">Training Jobs</p>
             </div>
 
@@ -53,9 +54,9 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                   </svg>
                 </div>
-                <span class="text-xs text-blue-400 bg-blue-900/30 px-2 py-1 rounded-full">156 GB</span>
+                <span class="text-xs text-blue-400 bg-blue-900/30 px-2 py-1 rounded-full">{{ total_dataset_size|filesizeformat }}</span>
               </div>
-              <h3 class="text-2xl font-bold text-white mb-1">47</h3>
+              <h3 class="text-2xl font-bold text-white mb-1">{{ total_datasets }}</h3>
               <p class="text-gray-400 text-sm">Datasets</p>
             </div>
 
@@ -67,9 +68,11 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </div>
-                <span class="text-xs text-green-400 bg-green-900/30 px-2 py-1 rounded-full">Normal</span>
+                <span class="text-xs text-green-400 bg-green-900/30 px-2 py-1 rounded-full">
+                    {% if gpu_monitoring_available %}Active{% else %}Unavailable{% endif %}
+                </span>
               </div>
-              <h3 class="text-2xl font-bold text-white mb-1">72%</h3>
+              <h3 class="text-2xl font-bold text-white mb-1">{{ gpu_usage|floatformat:1 }}%</h3>
               <p class="text-gray-400 text-sm">GPU Usage</p>
             </div>
           </div>
@@ -80,10 +83,11 @@
             <div class="lg:col-span-2 bg-ai-panel/60 backdrop-blur-sm rounded-xl p-6 border border-red-800/20">
               <div class="flex items-center justify-between mb-6">
                 <h2 class="text-xl font-bold text-white">Recent Training Jobs</h2>
-                <a href="/training/" class="text-red-400 hover:text-red-300 text-sm font-medium transition">View All</a>
+                <a href="{% url 'app:training' %}" class="text-red-400 hover:text-red-300 text-sm font-medium transition">View All</a>
               </div>
               
               <div class="space-y-4">
+                {% for job in recent_jobs %}
                 <div class="flex items-center justify-between p-4 bg-gray-900/30 rounded-lg border border-gray-800/50 hover:border-red-800/30 transition">
                   <div class="flex items-center space-x-4">
                     <div class="w-10 h-10 bg-red-600/20 rounded-lg flex items-center justify-center">
@@ -92,51 +96,28 @@
                       </svg>
                     </div>
                     <div>
-                      <h3 class="font-medium text-white">GPT-4 Fine-tune</h3>
-                      <p class="text-sm text-gray-400">Custom dataset • 2.1M parameters</p>
+                      <h3 class="font-medium text-white">{{ job.model.name }}</h3>
+                      <p class="text-sm text-gray-400">{{ job.dataset.name }}</p>
                     </div>
                   </div>
                   <div class="text-right">
-                    <span class="inline-block bg-green-900/30 text-green-400 text-xs px-2 py-1 rounded-full">Completed</span>
-                    <p class="text-xs text-gray-400 mt-1">2 hours ago</p>
+                    <span class="inline-block {% if job.status == 'completed' %}bg-green-900/30 text-green-400{% elif job.status == 'running' %}bg-amber-900/30 text-amber-400{% else %}bg-gray-700/30 text-gray-400{% endif %} text-xs px-2 py-1 rounded-full">
+                        {{ job.status|title }}
+                    </span>
+                    <p class="text-xs text-gray-400 mt-1">
+                        {% if job.metrics and job.metrics.r2_score %}
+                            R² Score: {{ job.metrics.r2_score|floatformat:3 }}
+                        {% else %}
+                            {{ job.started_at|timesince }} ago
+                        {% endif %}
+                    </p>
                   </div>
                 </div>
-
-                <div class="flex items-center justify-between p-4 bg-gray-900/30 rounded-lg border border-gray-800/50 hover:border-red-800/30 transition">
-                  <div class="flex items-center space-x-4">
-                    <div class="w-10 h-10 bg-amber-600/20 rounded-lg flex items-center justify-center">
-                      <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 class="font-medium text-white">BERT Classification</h3>
-                      <p class="text-sm text-gray-400">Sentiment analysis • 110M parameters</p>
-                    </div>
-                  </div>
-                  <div class="text-right">
-                    <span class="inline-block bg-amber-900/30 text-amber-400 text-xs px-2 py-1 rounded-full">Training</span>
-                    <p class="text-xs text-gray-400 mt-1">Progress: 67%</p>
-                  </div>
+                {% empty %}
+                <div class="text-center py-8">
+                    <p class="text-gray-400">No training jobs yet</p>
                 </div>
-
-                <div class="flex items-center justify-between p-4 bg-gray-900/30 rounded-lg border border-gray-800/50 hover:border-red-800/30 transition">
-                  <div class="flex items-center space-x-4">
-                    <div class="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center">
-                      <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 class="font-medium text-white">Vision Transformer</h3>
-                      <p class="text-sm text-gray-400">Image classification • 86M parameters</p>
-                    </div>
-                  </div>
-                  <div class="text-right">
-                    <span class="inline-block bg-gray-700/30 text-gray-400 text-xs px-2 py-1 rounded-full">Queued</span>
-                    <p class="text-xs text-gray-400 mt-1">Est. 4 hours</p>
-                  </div>
-                </div>
+                {% endfor %}
               </div>
             </div>
 
@@ -149,10 +130,10 @@
                 <div>
                   <div class="flex items-center justify-between mb-2">
                     <span class="text-sm text-gray-300">GPU Usage</span>
-                    <span class="text-sm text-red-400">72%</span>
+                    <span class="text-sm text-red-400">{{ gpu_usage|floatformat:1 }}%</span>
                   </div>
                   <div class="w-full bg-gray-800 rounded-full h-2">
-                    <div class="bg-gradient-to-r from-red-600 to-red-400 h-2 rounded-full" style="width: 72%"></div>
+                    <div class="bg-gradient-to-r from-red-600 to-red-400 h-2 rounded-full" style="width: {{ gpu_usage }}%"></div>
                   </div>
                 </div>
 
@@ -160,10 +141,10 @@
                 <div>
                   <div class="flex items-center justify-between mb-2">
                     <span class="text-sm text-gray-300">CPU Usage</span>
-                    <span class="text-sm text-blue-400">45%</span>
+                    <span class="text-sm text-blue-400">{{ cpu_usage|floatformat:1 }}%</span>
                   </div>
                   <div class="w-full bg-gray-800 rounded-full h-2">
-                    <div class="bg-gradient-to-r from-blue-600 to-blue-400 h-2 rounded-full" style="width: 45%"></div>
+                    <div class="bg-gradient-to-r from-blue-600 to-blue-400 h-2 rounded-full" style="width: {{ cpu_usage }}%"></div>
                   </div>
                 </div>
 
@@ -171,10 +152,10 @@
                 <div>
                   <div class="flex items-center justify-between mb-2">
                     <span class="text-sm text-gray-300">Memory</span>
-                    <span class="text-sm text-green-400">28 GB / 64 GB</span>
+                    <span class="text-sm text-green-400">{{ memory_usage|floatformat:1 }}%</span>
                   </div>
                   <div class="w-full bg-gray-800 rounded-full h-2">
-                    <div class="bg-gradient-to-r from-green-600 to-green-400 h-2 rounded-full" style="width: 44%"></div>
+                    <div class="bg-gradient-to-r from-green-600 to-green-400 h-2 rounded-full" style="width: {{ memory_usage }}%"></div>
                   </div>
                 </div>
 
@@ -182,10 +163,10 @@
                 <div>
                   <div class="flex items-center justify-between mb-2">
                     <span class="text-sm text-gray-300">Storage</span>
-                    <span class="text-sm text-amber-400">1.2 TB / 2 TB</span>
+                    <span class="text-sm text-amber-400">{{ storage_usage|floatformat:1 }}%</span>
                   </div>
                   <div class="w-full bg-gray-800 rounded-full h-2">
-                    <div class="bg-gradient-to-r from-amber-600 to-amber-400 h-2 rounded-full" style="width: 60%"></div>
+                    <div class="bg-gradient-to-r from-amber-600 to-amber-400 h-2 rounded-full" style="width: {{ storage_usage }}%"></div>
                   </div>
                 </div>
 
@@ -195,7 +176,7 @@
                     <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
                     <span class="text-green-400 font-medium">All Systems Operational</span>
                   </div>
-                  <p class="text-xs text-gray-400 mt-1">Last check: 2 minutes ago</p>
+                  <p class="text-xs text-gray-400 mt-1">Last check: Just now</p>
                 </div>
               </div>
             </div>
@@ -207,48 +188,28 @@
             <div class="bg-ai-panel/60 backdrop-blur-sm rounded-xl p-6 border border-red-800/20">
               <div class="flex items-center justify-between mb-6">
                 <h2 class="text-xl font-bold text-white">Top Performing Models</h2>
-                <a href="/models/" class="text-red-400 hover:text-red-300 text-sm font-medium transition">View All</a>
+                <a href="{% url 'app:models' %}" class="text-red-400 hover:text-red-300 text-sm font-medium transition">View All</a>
               </div>
               
               <div class="space-y-4">
+                {% for model in top_models %}
                 <div class="flex items-center justify-between p-3 bg-gray-900/30 rounded-lg border border-gray-800/50">
                   <div class="flex items-center space-x-3">
-                    <div class="w-8 h-8 bg-gradient-to-br from-red-600 to-red-800 rounded-lg flex items-center justify-center text-white font-bold text-sm">1</div>
+                    <div class="w-8 h-8 bg-gradient-to-br from-red-600 to-red-800 rounded-lg flex items-center justify-center text-white font-bold text-sm">{{ forloop.counter }}</div>
                     <div>
-                      <h3 class="font-medium text-white">GPT-4-Custom</h3>
-                      <p class="text-xs text-gray-400">Accuracy: 94.2%</p>
+                      <h3 class="font-medium text-white">{{ model.name }}</h3>
+                      <p class="text-xs text-gray-400">Accuracy: {{ model.accuracy|floatformat:1 }}%</p>
                     </div>
                   </div>
                   <div class="text-right">
-                    <span class="text-green-400 text-sm">↑ 2.1%</span>
+                    <span class="text-green-400 text-sm">↑ {{ model.accuracy|floatformat:1 }}%</span>
                   </div>
                 </div>
-
-                <div class="flex items-center justify-between p-3 bg-gray-900/30 rounded-lg border border-gray-800/50">
-                  <div class="flex items-center space-x-3">
-                    <div class="w-8 h-8 bg-gradient-to-br from-amber-600 to-amber-800 rounded-lg flex items-center justify-center text-white font-bold text-sm">2</div>
-                    <div>
-                      <h3 class="font-medium text-white">BERT-Classifier</h3>
-                      <p class="text-xs text-gray-400">Accuracy: 91.8%</p>
-                    </div>
-                  </div>
-                  <div class="text-right">
-                    <span class="text-green-400 text-sm">↑ 1.4%</span>
-                  </div>
+                {% empty %}
+                <div class="text-center py-8">
+                    <p class="text-gray-400">No models with accuracy metrics yet</p>
                 </div>
-
-                <div class="flex items-center justify-between p-3 bg-gray-900/30 rounded-lg border border-gray-800/50">
-                  <div class="flex items-center space-x-3">
-                    <div class="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg flex items-center justify-center text-white font-bold text-sm">3</div>
-                    <div>
-                      <h3 class="font-medium text-white">ResNet-Vision</h3>
-                      <p class="text-xs text-gray-400">Accuracy: 89.3%</p>
-                    </div>
-                  </div>
-                  <div class="text-right">
-                    <span class="text-red-400 text-sm">↓ 0.7%</span>
-                  </div>
-                </div>
+                {% endfor %}
               </div>
             </div>
 
@@ -257,45 +218,19 @@
               <h2 class="text-xl font-bold text-white mb-6">Recent Activity</h2>
               
               <div class="space-y-4">
+                {% for job in recent_jobs %}
                 <div class="flex items-start space-x-3">
-                  <div class="w-2 h-2 bg-green-500 rounded-full mt-2 animate-pulse"></div>
+                  <div class="w-2 h-2 {% if job.status == 'completed' %}bg-green-500{% elif job.status == 'running' %}bg-blue-500{% else %}bg-amber-500{% endif %} rounded-full mt-2 animate-pulse"></div>
                   <div class="flex-1">
-                    <p class="text-sm text-white">Model <span class="text-red-400">GPT-4-Custom</span> training completed</p>
-                    <p class="text-xs text-gray-400">2 hours ago</p>
+                    <p class="text-sm text-white">Model <span class="text-red-400">{{ job.model.name }}</span> {{ job.status }}</p>
+                    <p class="text-xs text-gray-400">{{ job.started_at|timesince }} ago</p>
                   </div>
                 </div>
-
-                <div class="flex items-start space-x-3">
-                  <div class="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                  <div class="flex-1">
-                    <p class="text-sm text-white">New dataset <span class="text-red-400">customer-reviews.json</span> uploaded</p>
-                    <p class="text-xs text-gray-400">4 hours ago</p>
-                  </div>
+                {% empty %}
+                <div class="text-center py-8">
+                    <p class="text-gray-400">No recent activity</p>
                 </div>
-
-                <div class="flex items-start space-x-3">
-                  <div class="w-2 h-2 bg-amber-500 rounded-full mt-2"></div>
-                  <div class="flex-1">
-                    <p class="text-sm text-white">Inference API called <span class="text-red-400">1,247</span> times</p>
-                    <p class="text-xs text-gray-400">6 hours ago</p>
-                  </div>
-                </div>
-
-                <div class="flex items-start space-x-3">
-                  <div class="w-2 h-2 bg-red-500 rounded-full mt-2"></div>
-                  <div class="flex-1">
-                    <p class="text-sm text-white">Model <span class="text-red-400">BERT-v2</span> deployment started</p>
-                    <p class="text-xs text-gray-400">8 hours ago</p>
-                  </div>
-                </div>
-
-                <div class="flex items-start space-x-3">
-                  <div class="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-                  <div class="flex-1">
-                    <p class="text-sm text-white">System maintenance completed</p>
-                    <p class="text-xs text-gray-400">12 hours ago</p>
-                  </div>
-                </div>
+                {% endfor %}
               </div>
             </div>
           </div>
@@ -305,7 +240,7 @@
             <h2 class="text-xl font-bold text-white mb-6">Quick Actions</h2>
             
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <a href="/training/new/" class="flex items-center space-x-3 p-4 bg-red-900/20 hover:bg-red-900/30 border border-red-800/30 rounded-lg transition-all group">
+              <a href="{% url 'app:training' %}" class="flex items-center space-x-3 p-4 bg-red-900/20 hover:bg-red-900/30 border border-red-800/30 rounded-lg transition-all group">
                 <div class="w-10 h-10 bg-red-600/20 rounded-lg flex items-center justify-center group-hover:bg-red-600/30 transition">
                   <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -317,7 +252,7 @@
                 </div>
               </a>
 
-              <a href="/datasets/upload/" class="flex items-center space-x-3 p-4 bg-blue-900/20 hover:bg-blue-900/30 border border-blue-800/30 rounded-lg transition-all group">
+              <a href="{% url 'app:datasets' %}" class="flex items-center space-x-3 p-4 bg-blue-900/20 hover:bg-blue-900/30 border border-blue-800/30 rounded-lg transition-all group">
                 <div class="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center group-hover:bg-blue-600/30 transition">
                   <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -329,7 +264,7 @@
                 </div>
               </a>
 
-              <a href="/models/deploy/" class="flex items-center space-x-3 p-4 bg-green-900/20 hover:bg-green-900/30 border border-green-800/30 rounded-lg transition-all group">
+              <a href="{% url 'app:models' %}" class="flex items-center space-x-3 p-4 bg-green-900/20 hover:bg-green-900/30 border border-green-800/30 rounded-lg transition-all group">
                 <div class="w-10 h-10 bg-green-600/20 rounded-lg flex items-center justify-center group-hover:bg-green-600/30 transition">
                   <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -341,7 +276,7 @@
                 </div>
               </a>
 
-              <a href="/inference/test/" class="flex items-center space-x-3 p-4 bg-purple-900/20 hover:bg-purple-900/30 border border-purple-800/30 rounded-lg transition-all group">
+              <a href="{% url 'app:inference' %}" class="flex items-center space-x-3 p-4 bg-purple-900/20 hover:bg-purple-900/30 border border-purple-800/30 rounded-lg transition-all group">
                 <div class="w-10 h-10 bg-purple-600/20 rounded-lg flex items-center justify-center group-hover:bg-purple-600/30 transition">
                   <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
