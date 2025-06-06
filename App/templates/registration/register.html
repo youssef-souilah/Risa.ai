@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - Risa.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'ai-primary': 'rgba(142, 14, 0, 0.8)',
+                        'ai-secondary': 'rgba(142, 14, 0, 0.6)',
+                        'ai-dark': '#1f1c18',
+                        'ai-panel': 'rgba(31, 28, 24, 0.8)',
+                        'ai-accent': '#8e0e00',
+                        'ai-light': '#2a2520',
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-ai-dark via-gray-900 to-amber-900 text-white font-mono min-h-screen">
+    <!-- Neural network background animation -->
+    <div class="fixed inset-0 overflow-hidden z-0 opacity-10">
+        <div class="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiPjxkZWZzPjxwYXR0ZXJuIGlkPSJwYXR0ZXJuIiB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHBhdHRlcm5Vbml0cz0idXNlclNwYWNlT25Vc2UiIHBhdHRlcm5UcmFuc2Zvcm09InJvdGF0ZSg0NSkiPjxyZWN0IHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjAyKSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNwYXR0ZXJuKSIvPjwvc3ZnPg==')]"></div>
+    </div>
+
+    <div class="min-h-screen flex items-center justify-center relative z-10">
+        <div class="max-w-md w-full space-y-8 bg-ai-panel/60 backdrop-blur-sm p-8 rounded-xl border border-red-800/20">
+            <div>
+                <div class="flex justify-center">
+                    <div class="w-16 h-16 bg-gradient-to-br from-red-600 to-red-800 rounded-lg flex items-center justify-center shadow-lg">
+                        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                        </svg>
+                    </div>
+                </div>
+                <h2 class="mt-6 text-center text-3xl font-bold text-white">
+                    Create your account
+                </h2>
+            </div>
+
+            {% if messages %}
+            <div class="rounded-md bg-green-900/20 p-4 border border-green-800/30">
+                {% for message in messages %}
+                <div class="text-sm text-green-400">
+                    {{ message }}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <form class="mt-8 space-y-6" method="POST">
+                {% csrf_token %}
+                <div class="rounded-md shadow-sm -space-y-px">
+                    <div>
+                        <label for="id_username" class="sr-only">Username</label>
+                        <input id="id_username" name="username" type="text" required class="appearance-none rounded-none relative block w-full px-3 py-2 border border-red-800/30 placeholder-gray-500 text-white bg-gray-900/50 rounded-t-md focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm" placeholder="Username">
+                    </div>
+                    <div>
+                        <label for="id_password1" class="sr-only">Password</label>
+                        <input id="id_password1" name="password1" type="password" required class="appearance-none rounded-none relative block w-full px-3 py-2 border border-red-800/30 placeholder-gray-500 text-white bg-gray-900/50 focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm" placeholder="Password">
+                    </div>
+                    <div>
+                        <label for="id_password2" class="sr-only">Confirm Password</label>
+                        <input id="id_password2" name="password2" type="password" required class="appearance-none rounded-none relative block w-full px-3 py-2 border border-red-800/30 placeholder-gray-500 text-white bg-gray-900/50 rounded-b-md focus:outline-none focus:ring-red-500 focus:border-red-500 focus:z-10 sm:text-sm" placeholder="Confirm Password">
+                    </div>
+                </div>
+
+                {% if form.errors %}
+                <div class="rounded-md bg-red-900/20 p-4 border border-red-800/30">
+                    <div class="text-sm text-red-400">
+                        {% for field, errors in form.errors.items %}
+                            {% for error in errors %}
+                                {{ error }}
+                            {% endfor %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div>
+                    <button type="submit" class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                        <span class="absolute left-0 inset-y-0 flex items-center pl-3">
+                            <svg class="h-5 w-5 text-red-400 group-hover:text-red-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                            </svg>
+                        </span>
+                        Create Account
+                    </button>
+                </div>
+
+                <div class="text-center">
+                    <p class="text-sm text-gray-400">
+                        Already have an account?
+                        <a href="{% url 'login' %}" class="font-medium text-red-400 hover:text-red-300">
+                            Sign in
+                        </a>
+                    </p>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html> 
