@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+
+{% block title %}Make Predictions - {{ model.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Make Predictions with {{ model.name }}</h2>
+    
+    {% if not features %}
+    <div class="alert alert-warning">
+        This model has not been trained yet. Please train the model before making predictions.
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="card-body">
+            <form id="predictionForm">
+                <div class="row">
+                    {% for feature in features %}
+                    <div class="col-md-4 mb-3">
+                        <label for="{{ feature }}" class="form-label">{{ feature }}</label>
+                        <input type="number" step="any" class="form-control" id="{{ feature }}" name="{{ feature }}" required>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-primary">Predict</button>
+            </form>
+            
+            <div id="predictionResult" class="mt-4" style="display: none;">
+                <h4>Prediction Result</h4>
+                <div class="alert alert-info">
+                    <strong>Predicted Value:</strong> <span id="predictedValue"></span>
+                </div>
+            </div>
+            
+            <div id="errorMessage" class="mt-4" style="display: none;">
+                <div class="alert alert-danger">
+                    <span id="errorText"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if features %}
+<script>
+document.getElementById('predictionForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    // Get all feature values
+    const features = {};
+    {% for feature in features %}
+    features['{{ feature }}'] = parseFloat(document.getElementById('{{ feature }}').value);
+    {% endfor %}
+    
+    try {
+        const response = await fetch('{% url "app:predict" model.id %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({
+                features: Object.values(features)
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            // Show prediction result
+            document.getElementById('predictionResult').style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('predictedValue').textContent = data.predictions;
+        } else {
+            // Show error message
+            document.getElementById('predictionResult').style.display = 'none';
+            document.getElementById('errorMessage').style.display = 'block';
+            document.getElementById('errorText').textContent = data.error;
+        }
+    } catch (error) {
+        // Show error message
+        document.getElementById('predictionResult').style.display = 'none';
+        document.getElementById('errorMessage').style.display = 'block';
+        document.getElementById('errorText').textContent = 'An error occurred while making the prediction.';
+    }
+});
+</script>
+{% endif %}
+{% endblock %} 
