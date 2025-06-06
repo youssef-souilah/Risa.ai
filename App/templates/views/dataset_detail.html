@@ -1,0 +1,359 @@
+{% extends 'base.html' %}
+{% load app_filters %}
+{% load static %}
+
+{% block title %}{{ dataset.name }} - Dataset Details{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="bg-gray-800 rounded-lg shadow-lg p-6">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-white">{{ dataset.name }}</h1>
+                <p class="text-gray-400">{{ dataset.description }}</p>
+            </div>
+            <div class="flex items-center space-x-4">
+                {% if not dataset.processed_data %}
+                <form method="post" action="{% url 'app:process_dataset' dataset.id %}" class="flex items-center space-x-2">
+                    {% csrf_token %}
+                    <div class="flex items-center space-x-4">
+                        <label class="flex items-center space-x-2 text-gray-300">
+                            <input type="checkbox" name="normalize" class="form-checkbox text-red-600">
+                            <span>Normalize</span>
+                        </label>
+                        <label class="flex items-center space-x-2 text-gray-300">
+                            <input type="checkbox" name="handle_missing" class="form-checkbox text-red-600">
+                            <span>Handle Missing</span>
+                        </label>
+                        <label class="flex items-center space-x-2 text-gray-300">
+                            <input type="checkbox" name="encode_categorical" class="form-checkbox text-red-600">
+                            <span>Encode Categorical</span>
+                        </label>
+                    </div>
+                    <button type="submit" 
+                            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                        Process Dataset
+                    </button>
+                </form>
+                {% else %}
+                {% if models %}
+                <form method="post" action="{% url 'app:train_model' 0 %}" class="flex items-center space-x-2" id="trainForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="dataset" value="{{ dataset.id }}">
+                    <select name="model" class="bg-gray-900/50 border border-red-800/30 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-1 focus:ring-red-500/50 focus:border-red-500/50">
+                        <option value="">Select a model...</option>
+                        {% for model in models %}
+                        <option value="{{ model.id }}">{{ model.name }} ({{ model.get_model_type_display }})</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" 
+                            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                        Train Model
+                    </button>
+                </form>
+                {% else %}
+                <a href="{% url 'app:create_model' %}" 
+                   class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                    Create Model
+                </a>
+                {% endif %}
+                {% endif %}
+                
+                <!-- Delete Dataset Button -->
+                <form method="post" action="{% url 'app:delete_dataset' dataset.id %}" class="inline" onsubmit="return confirm('Are you sure you want to delete this dataset? This action cannot be undone.');">
+                    {% csrf_token %}
+                    <button type="submit" 
+                            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                        Delete Dataset
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Dataset Overview -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-gray-700 rounded-lg p-4">
+                <h3 class="text-lg font-medium text-white mb-2">Overview</h3>
+                <div class="space-y-2">
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Rows</span>
+                        <span class="text-white">{{ stats.rows }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Columns</span>
+                        <span class="text-white">{{ stats.columns }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">File Size</span>
+                        <span class="text-white">{{ dataset.file_size|filesizeformat }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Target Variable</span>
+                        <span class="text-white">{{ dataset.target }}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-gray-700 rounded-lg p-4">
+                <h3 class="text-lg font-medium text-white mb-2">Features</h3>
+                <div class="space-y-2">
+                    {% for feature in dataset.features %}
+                    <div class="flex items-center justify-between">
+                        <span class="text-gray-400">{{ feature }}</span>
+                        <span class="text-xs px-2 py-1 rounded-full {% if stats.features|get_item:feature|get_item:'type' == 'float64' %}bg-blue-900 text-blue-300{% elif stats.features|get_item:feature|get_item:'type' == 'int64' %}bg-green-900 text-green-300{% else %}bg-purple-900 text-purple-300{% endif %}">
+                            {{ stats.features|get_item:feature|get_item:'type' }}
+                        </span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div class="bg-gray-700 rounded-lg p-4">
+                <h3 class="text-lg font-medium text-white mb-2">Preprocessing</h3>
+                <div class="space-y-2">
+                    {% if dataset.processed_data %}
+                    <div class="text-green-400 mb-2">✓ Dataset has been processed</div>
+                    <div class="text-sm text-gray-300 whitespace-pre-line">{{ dataset.get_preprocessing_info }}</div>
+                    {% else %}
+                    <div class="text-amber-400">Dataset needs to be processed before training</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Feature Statistics -->
+        <div class="bg-gray-700 rounded-lg p-6 mb-8">
+            <h3 class="text-lg font-medium text-white mb-4">Feature Statistics</h3>
+            
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-600">
+                    <thead>
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Feature</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Type</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Missing</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Unique</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Mean</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Std</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Min</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Max</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-600">
+                        {% for feature, feature_stats in stats.features.items %}
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-white">{{ feature }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{{ feature_stats.type }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{{ feature_stats.missing }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{{ feature_stats.unique }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{{ feature_stats.mean|floatformat:2|default:"-" }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{{ feature_stats.std|floatformat:2|default:"-" }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{{ feature_stats.min|floatformat:2|default:"-" }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{{ feature_stats.max|floatformat:2|default:"-" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Feature Correlations -->
+        <div class="bg-gray-900/50 rounded-lg p-4 border border-red-800/30 mb-6">
+            <h3 class="text-lg font-medium text-white mb-4">Feature Correlations with Target</h3>
+            <div class="mb-4">
+                <p class="text-sm text-gray-400 mb-4">Select features based on their correlation with the target variable. Higher absolute correlation values indicate stronger relationships.</p>
+                <div class="h-96">
+                    <canvas id="targetCorrelationChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Feature Selection -->
+        <div class="bg-gray-900/50 rounded-lg p-4 border border-red-800/30 mb-6">
+            <h3 class="text-lg font-medium text-white mb-4">Feature Selection</h3>
+            <form method="post" action="{% url 'app:process_dataset' dataset.id %}" id="feature-form">
+                {% csrf_token %}
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Select Features</label>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="feature-selection">
+                        {% for feature in dataset.features %}
+                        <div class="flex items-center">
+                            <input type="checkbox" name="features" value="{{ feature }}" id="feature-{{ feature }}" 
+                                   class="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-600 rounded bg-gray-900/50">
+                            <label for="feature-{{ feature }}" class="ml-2 block text-sm text-gray-300">
+                                {{ feature }}
+                                {% if correlations|get_item:feature %}
+                                <span class="text-xs {% if correlations|get_item:feature|get_item:'correlation' < 0 %}text-red-400{% else %}text-green-400{% endif %}">
+                                    ({{ correlations|get_item:feature|get_item:'correlation'|floatformat:3 }})
+                                </span>
+                                {% if correlations|get_item:feature|get_item:'is_categorical' %}
+                                <span class="text-xs text-yellow-400">[Categorical]</span>
+                                {% endif %}
+                                {% endif %}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Preprocessing Options -->
+                <div class="space-y-4 mt-6">
+                    <h4 class="text-md font-medium text-white mb-4">Preprocessing Options</h4>
+                    <div class="flex items-center">
+                        <input type="checkbox" name="normalize" id="normalize" class="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-600 rounded bg-gray-900/50">
+                        <label for="normalize" class="ml-2 block text-sm text-gray-300">Normalize Features</label>
+                    </div>
+                    
+                    <div class="flex items-center">
+                        <input type="checkbox" name="handle_missing" id="handle_missing" class="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-600 rounded bg-gray-900/50">
+                        <label for="handle_missing" class="ml-2 block text-sm text-gray-300">Handle Missing Values</label>
+                    </div>
+                    
+                    <div class="flex items-center">
+                        <input type="checkbox" name="encode_categorical" id="encode_categorical" class="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-600 rounded bg-gray-900/50">
+                        <label for="encode_categorical" class="ml-2 block text-sm text-gray-300">Encode Categorical Variables</label>
+                    </div>
+                </div>
+
+                <div class="flex justify-end mt-6">
+                    <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                        Process Dataset
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Data Preview -->
+        <div class="bg-gray-700 rounded-lg p-6">
+            <h3 class="text-lg font-medium text-white mb-4">Data Preview</h3>
+            
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-600">
+                    <thead>
+                        <tr>
+                            {% for feature in dataset.features %}
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{{ feature }}</th>
+                            {% endfor %}
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{{ dataset.target }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-600">
+                        {% for row in preview_data %}
+                        <tr>
+                            {% for feature in dataset.features %}
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{{ row|get_item:feature }}</td>
+                            {% endfor %}
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-white">{{ row|get_item:dataset.target }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const correlations = {{ correlations_json|safe }};
+    const target = "{{ dataset.target }}";
+    
+    // Create correlation chart
+    const ctx = document.getElementById('targetCorrelationChart').getContext('2d');
+    const correlationData = Object.entries(correlations).map(([feature, data]) => ({
+        feature: feature,
+        correlation: data.correlation,
+        is_categorical: data.is_categorical
+    })).sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation));
+    
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: correlationData.map(c => c.feature),
+            datasets: [{
+                label: `Correlation with ${target}`,
+                data: correlationData.map(c => c.correlation),
+                backgroundColor: function(context) {
+                    const value = context.raw;
+                    return value < 0 
+                        ? 'rgba(239, 68, 68, 0.8)'
+                        : 'rgba(34, 197, 94, 0.8)';
+                },
+                borderColor: function(context) {
+                    const value = context.raw;
+                    return value < 0 
+                        ? 'rgba(239, 68, 68, 1)'
+                        : 'rgba(34, 197, 94, 1)';
+                },
+                borderWidth: 1
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.raw;
+                            const feature = correlationData[context.dataIndex];
+                            return [
+                                `Correlation: ${value.toFixed(3)}`,
+                                `Type: ${feature.is_categorical ? 'Categorical' : 'Numerical'}`
+                            ];
+                        }
+                    },
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#fff',
+                    bodyColor: '#fff',
+                    borderColor: '#4361ee',
+                    borderWidth: 1,
+                    padding: 10
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Correlation Coefficient',
+                        color: '#fff'
+                    },
+                    min: -1,
+                    max: 1,
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)'
+                    },
+                    ticks: {
+                        color: '#fff'
+                    }
+                },
+                y: {
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)'
+                    },
+                    ticks: {
+                        color: '#fff'
+                    }
+                }
+            }
+        }
+    });
+
+    // Form validation
+    document.getElementById('feature-form').addEventListener('submit', function(e) {
+        const selectedFeatures = document.querySelectorAll('input[name="features"]:checked');
+        if (selectedFeatures.length === 0) {
+            e.preventDefault();
+            alert('Please select at least one feature.');
+            return;
+        }
+    });
+});
+</script>
+{% endblock %} 

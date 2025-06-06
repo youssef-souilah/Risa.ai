@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-white">Datasets</h1>
+        <a href="#" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors">
+            <span class="flex items-center space-x-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <span>Upload Dataset</span>
+            </span>
+        </a>
+    </div>
+
+    <!-- Datasets Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {% for dataset in datasets %}
+        <div class="bg-ai-panel/60 backdrop-blur-sm rounded-xl p-6 border border-red-800/20 hover:border-red-600/40 transition-all">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-12 h-12 bg-blue-600/20 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                    </svg>
+                </div>
+                <span class="text-xs text-blue-400 bg-blue-900/30 px-2 py-1 rounded-full">{{ dataset.file_size|floatformat:2 }} GB</span>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-2">{{ dataset.name }}</h3>
+            <p class="text-gray-400 text-sm mb-4">{{ dataset.description }}</p>
+            <div class="space-y-2">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-400">Created</span>
+                    <span class="text-white">{{ dataset.created_at|date:"M d, Y" }}</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-400">Size</span>
+                    <span class="text-white">{{ dataset.file_size|floatformat:2 }} GB</span>
+                </div>
+            </div>
+            <div class="mt-6 flex space-x-3">
+                <a href="#" class="flex-1 bg-blue-900/20 hover:bg-blue-900/30 text-blue-400 text-center py-2 rounded-lg transition-colors">
+                    Download
+                </a>
+                <a href="#" class="flex-1 bg-gray-900/20 hover:bg-gray-900/30 text-gray-400 text-center py-2 rounded-lg transition-colors">
+                    Edit
+                </a>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-span-full bg-ai-panel/60 backdrop-blur-sm rounded-xl p-6 border border-red-800/20 text-center">
+            <div class="w-16 h-16 bg-blue-600/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                </svg>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-2">No Datasets Yet</h3>
+            <p class="text-gray-400 mb-4">Upload your first dataset to get started</p>
+            <a href="#" class="inline-flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <span>Upload Dataset</span>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %} 
