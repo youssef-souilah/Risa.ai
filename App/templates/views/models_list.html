@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+
+{% block title %}Models{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-white">Models</h1>
+            <p class="text-gray-400">Manage your AI models</p>
+        </div>
+        <a href="{% url 'app:create_model' %}" 
+           class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+            Create Model
+        </a>
+    </div>
+
+    <!-- Models Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {% for model in models %}
+        <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden border border-red-800/20 hover:border-red-600/40 transition-all">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-white">{{ model.name }}</h3>
+                    <span class="text-xs px-2 py-1 rounded-full {% if model.status == 'active' %}bg-green-900/30 text-green-400{% elif model.status == 'training' %}bg-amber-900/30 text-amber-400{% else %}bg-gray-700/30 text-gray-400{% endif %}">
+                        {{ model.status|title }}
+                    </span>
+                </div>
+                
+                <p class="text-gray-400 text-sm mb-4">{{ model.description|truncatechars:100 }}</p>
+                
+                <div class="space-y-2 mb-4">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-400">Type</span>
+                        <span class="text-white">{{ model.get_model_type_display }}</span>
+                    </div>
+                    {% if model.accuracy %}
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-400">Accuracy</span>
+                        <span class="text-white">{{ model.accuracy|floatformat:2 }}%</span>
+                    </div>
+                    {% endif %}
+                    {% if model.last_training %}
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-400">Last Training</span>
+                        <span class="text-white">{{ model.last_training.started_at|date:"M d, Y" }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <div class="flex items-center justify-between">
+                    <div class="flex space-x-3">
+                        <a href="{% url 'app:model_detail' model.id %}" 
+                           class="text-red-400 hover:text-red-300 text-sm font-medium transition">
+                            View Details
+                        </a>
+                        {% if model.status == 'active' %}
+                        <a href="{% url 'app:predict' model.id %}" 
+                           class="text-blue-400 hover:text-blue-300 text-sm font-medium transition">
+                            Make Predictions
+                        </a>
+                        {% endif %}
+                    </div>
+                    <span class="text-xs text-gray-500">{{ model.created_at|date:"M d, Y" }}</span>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-span-full">
+            <div class="text-center py-12">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                </svg>
+                <h3 class="mt-2 text-sm font-medium text-gray-400">No models</h3>
+                <p class="mt-1 text-sm text-gray-500">Get started by creating a new model.</p>
+                <div class="mt-6">
+                    <a href="{% url 'app:create_model' %}" 
+                       class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                        Create Model
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %} 
