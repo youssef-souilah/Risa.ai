@@ -106,4 +106,117 @@ class LinearRegression:
         self.theta = np.array(params['theta'])
         self.alpha = params['alpha']
         self.iterations = params['iterations']
+        self.training_history = params.get('training_history', [])
+
+class LogisticRegression:
+    def __init__(self, alpha=0.01, iterations=1000):
+        self.alpha = alpha
+        self.iterations = iterations
+        self.theta = None
+        self.training_history = []
+    
+    def _add_bias_term(self, X):
+        # Check if bias term is already added (last column is all ones)
+        if X.shape[1] > 0 and np.all(X[:, -1] == 1):
+            return X
+        return np.c_[X, np.ones(len(X))]
+    
+    def _sigmoid(self, z):
+        return 1 / (1 + np.exp(-z))
+    
+    def _compute_cost(self, X, y, theta):
+        m = len(X)
+        predictions = self._sigmoid(X.dot(theta))
+        # Handle numerical stability
+        predictions = np.clip(predictions, 1e-15, 1 - 1e-15)
+        cost = -(1/m) * np.sum(y * np.log(predictions) + (1 - y) * np.log(1 - predictions))
+        return cost
+    
+    def _compute_gradient(self, X, y, theta):
+        m = len(X)
+        predictions = self._sigmoid(X.dot(theta))
+        error = predictions - y.reshape(-1, 1)
+        gradient = (1/m) * X.T.dot(error)
+        return gradient
+    
+    def fit(self, X, y):
+        # Print initial shapes
+        print(f"LogisticRegression.fit - Initial X shape: {X.shape}")
+        print(f"LogisticRegression.fit - Initial y shape: {y.shape}")
+        
+        # Add bias term to features
+        X = self._add_bias_term(X)
+        print(f"LogisticRegression.fit - X shape after adding bias: {X.shape}")
+        
+        # Ensure y is a column vector
+        y = y.reshape(-1, 1)
+        print(f"LogisticRegression.fit - y shape after reshape: {y.shape}")
+        
+        # Initialize parameters
+        n_features = X.shape[1]  # This includes the bias term
+        print(f"LogisticRegression.fit - Number of features (including bias): {n_features}")
+        self.theta = np.zeros((n_features, 1))
+        print(f"LogisticRegression.fit - Theta shape: {self.theta.shape}")
+        
+        # Initialize training history
+        self.training_history = []
+        
+        # Gradient descent
+        for i in range(self.iterations):
+            # Compute gradient
+            gradient = self._compute_gradient(X, y, self.theta)
+            
+            # Update parameters
+            self.theta -= self.alpha * gradient
+            
+            # Record training history every 10 iterations
+            if i % 10 == 0:
+                cost = self._compute_cost(X, y, self.theta)
+                self.training_history.append({
+                    'iteration': i,
+                    'cost': float(cost),
+                    'theta': self.theta.tolist()
+                })
+        
+        # Record final state
+        final_cost = self._compute_cost(X, y, self.theta)
+        self.training_history.append({
+            'iteration': self.iterations,
+            'cost': float(final_cost),
+            'theta': self.theta.tolist()
+        })
+        
+        return self
+    
+    def predict(self, X):
+        print(f"LogisticRegression.predict - Input X shape: {X.shape}")
+        X = self._add_bias_term(X)
+        print(f"LogisticRegression.predict - X shape after adding bias: {X.shape}")
+        probabilities = self._sigmoid(X.dot(self.theta))
+        return (probabilities >= 0.5).astype(int)
+    
+    def predict_proba(self, X):
+        """Return probability estimates for each class."""
+        X = self._add_bias_term(X)
+        return self._sigmoid(X.dot(self.theta))
+    
+    def score(self, X, y):
+        """Calculate accuracy score."""
+        X = self._add_bias_term(X)
+        y = y.reshape(-1, 1)
+        y_pred = self.predict(X)
+        return np.mean(y_pred == y)
+    
+    def get_params(self):
+        return {
+            'theta': self.theta.tolist(),
+            'alpha': self.alpha,
+            'iterations': self.iterations,
+            'training_history': self.training_history
+        }
+    
+    def set_params(self, params):
+        self.theta = np.array(params['theta'])
+        self.alpha = params['alpha']
+        self.iterations = params['iterations']
         self.training_history = params.get('training_history', []) 
