@@ -87,7 +87,12 @@
                         <div class="ml-3">
                             <h3 class="text-sm font-medium text-green-400">Prediction Result</h3>
                             <div class="mt-2 text-sm text-green-300">
+                                {% if model.model_type == 'logistic' %}
+                                <p>Predicted Class: <strong id="predictionClass" class="font-semibold"></strong></p>
+                                <p>Probability: <strong id="predictionProbability" class="font-semibold"></strong></p>
+                                {% else %}
                                 <p>The predicted value is: <strong id="predictionValue" class="font-semibold"></strong></p>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -122,8 +127,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('predictionForm');
     const predictionResult = document.getElementById('predictionResult');
     const predictionValue = document.getElementById('predictionValue');
+    const predictionClass = document.getElementById('predictionClass');
+    const predictionProbability = document.getElementById('predictionProbability');
     const errorResult = document.getElementById('errorResult');
     const errorMessage = document.getElementById('errorMessage');
+    const isLogisticRegression = '{{ model.model_type }}' === 'logistic';
     
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
@@ -154,7 +162,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
             
             if (response.ok) {
-                predictionValue.textContent = data.predictions;
+                if (isLogisticRegression) {
+                    predictionClass.textContent = data.predictions[0];
+                    predictionProbability.textContent = (data.probabilities[0] * 100).toFixed(2) + '%';
+                } else {
+                    predictionValue.textContent = data.predictions;
+                }
                 predictionResult.classList.remove('hidden');
                 errorResult.classList.add('hidden');
             } else {
