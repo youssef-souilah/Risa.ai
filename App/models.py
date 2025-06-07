@@ -69,11 +69,100 @@ class AIModel(models.Model):
             self.save()
             raise Exception(f"Error training model: {str(e)}")
     
-    def predict(self, X):
+    def preprocess_input(self, input_data):
+        """
+        Preprocess input data using the same transformations applied during training.
+        Returns preprocessed data ready for prediction.
+        """
+        if not self.training_jobs.exists():
+            raise Exception("Model has not been trained yet")
+        
+        # Get the most recent training job and its dataset
+        training_job = self.training_jobs.latest('started_at')
+        dataset = training_job.dataset
+        
+        if not dataset.processed_data:
+            raise Exception("Dataset has not been processed")
+        
+        preprocessing_info = dataset.processed_data['preprocessing']
+        feature_names = dataset.processed_data['feature_names']
+        
+        # Convert input data to DataFrame for easier manipulation
+        if isinstance(input_data, dict):
+            df = pd.DataFrame([input_data])
+        elif isinstance(input_data, list):
+            df = pd.DataFrame(input_data)
+        else:
+            raise ValueError("Input data must be dict or list of dicts")
+        
+        # Ensure all required features are present
+        missing_features = set(feature_names) - set(df.columns)
+        if missing_features:
+            raise ValueError(f"Missing required features: {missing_features}")
+        
+        # Select only the features used in training
+        df = df[feature_names].copy()
+        
+        # Apply the same preprocessing steps as training
+        for col in feature_names:
+            # Handle missing values
+            if preprocessing_info['handle_missing'] and col in preprocessing_info['feature_params']:
+                fill_value = preprocessing_info['feature_params'][col].get('missing_value')
+                if fill_value is not None:
+                    df[col] = df[col].fillna(fill_value)
+            
+            # Encode categorical variables
+            if (preprocessing_info['encode_categorical'] and 
+                col in preprocessing_info.get('categorical_mappings', {})):
+                mapping = preprocessing_info['categorical_mappings'][col]['mapping']
+                # For unseen categories, use a default value (could also raise an error)
+                df[col] = df[col].apply(lambda x: mapping.get(x, -1))
+            
+            # Normalize numerical features
+            if (preprocessing_info['normalize'] and 
+                col in preprocessing_info.get('feature_params', {}) and
+                'normalization' in preprocessing_info['feature_params'][col]):
+                norm_params = preprocessing_info['feature_params'][col]['normalization']
+                if norm_params.get('std', 0) != 0:
+                    df[col] = (df[col] - norm_params['mean']) / norm_params['std']
+        
+        return df.values.astype(np.float64)
+    
+    def postprocess_output(self, predictions):
+        """
+        Convert model predictions back to original scale.
+        """
+        if not self.training_jobs.exists():
+            return predictions
+        
+        # Get the most recent training job and its dataset
+        training_job = self.training_jobs.latest('started_at')
+        dataset = training_job.dataset
+        
+        if not dataset.processed_data:
+            return predictions
+        
+        preprocessing_info = dataset.processed_data['preprocessing']
+        
+        # Only reverse normalization if it was applied to target
+        if (preprocessing_info.get('normalize', False) and 
+            preprocessing_info.get('target_params', {})):
+            
+            y_min = preprocessing_info['target_params'].get('min', 0)
+            y_range = preprocessing_info['target_params'].get('range', 1)
+            
+            if y_range != 0:
+                # Convert from normalized [0,1] back to original scale
+                predictions = np.array(predictions)
+                predictions = predictions * y_range + y_min
+                
+        return predictions
+    
+    def predict(self, input_data):
         """Make predictions using the trained model."""
         try:
-            # Ensure input is in the correct format
-            X = np.array(X, dtype=np.float64)
+            # Preprocess the input data
+            X = self.preprocess_input(input_data)
             
             print(f"AIModel.predict - X shape: {X.shape}")
             
@@ -88,7 +177,10 @@ class AIModel(models.Model):
                 model.set_params(self.parameters)
                 
                 # Make predictions
-                return model.predict(X)
+                predictions = model.predict(X)
+                
+                # Postprocess predictions to original scale
+                return self.postprocess_output(predictions)
             else:
                 raise ValueError(f"Prediction not implemented for {self.model_type}")
             
@@ -149,22 +241,6 @@ class Dataset(models.Model):
             print(f"Error getting dataset statistics: {str(e)}")
             return None
     
-    def normalize_target(self, y):
-        """Normalize target variable using Min-Max scaling."""
-        y = np.array(y, dtype=np.float64)
-        y_min = np.min(y)
-        y_max = np.max(y)
-        y_range = y_max - y_min
-        
-        if y_range != 0:
-            y_normalized = (y - y_min) / y_range
-            print(f"Target min: {y_min}, max: {y_max}")
-            print(f"First 5 normalized target values: {y_normalized[:5]}")
-            return y_normalized, {'min': y_min, 'max': y_max}
-        else:
-            print("Warning: Target range is 0, returning original values")
-            return y, {'min': y_min, 'max': y_max}
-
     def process(self, features=None, normalize=False, handle_missing=False, encode_categorical=False):
         """Process the dataset with selected features."""
         try:
@@ -175,6 +251,9 @@ class Dataset(models.Model):
             else:
                 raise ValueError("Unsupported file format")
             
+            # Store original data for reference
+            original_data = df.copy()
+            
             # Update selected features
             if features:
                 self.selected_features = features
@@ -184,19 +263,44 @@ class Dataset(models.Model):
             features_to_process = self.selected_features if self.selected_features else df.columns.tolist()
             features_to_process = [f for f in features_to_process if f != self.target]
             
+            preprocessing_info = {
+                'normalize': normalize,
+                'handle_missing': handle_missing,
+                'encode_categorical': encode_categorical,
+                'feature_params': {},
+                'categorical_mappings': {},
+                'target_params': {}
+            }
+            
             # Handle missing values
             if handle_missing:
                 for col in features_to_process:
                     if df[col].dtype in ['int64', 'float64']:
-                        df[col] = df[col].fillna(df[col].mean())
+                        fill_value = df[col].mean()
+                        preprocessing_info['feature_params'][col] = {
+                            'missing_value': float(fill_value),
+                            'missing_strategy': 'mean'
+                        }
+                        df[col] = df[col].fillna(fill_value)
                     else:
-                        df[col] = df[col].fillna(df[col].mode()[0])
+                        fill_value = df[col].mode()[0]
+                        preprocessing_info['feature_params'][col] = {
+                            'missing_value': str(fill_value),
+                            'missing_strategy': 'mode'
+                        }
+                        df[col] = df[col].fillna(fill_value)
             
             # Encode categorical variables
             if encode_categorical:
                 for col in features_to_process:
                     if df[col].dtype == 'object':
-                        df[col] = pd.Categorical(df[col]).codes
+                        unique_values = df[col].unique()
+                        mapping = {v: i for i, v in enumerate(unique_values)}
+                        preprocessing_info['categorical_mappings'][col] = {
+                            'mapping': mapping,
+                            'inverse_mapping': {i: v for v, i in mapping.items()}
+                        }
+                        df[col] = df[col].map(mapping)
             
             # Normalize numerical features
             if normalize:
@@ -204,34 +308,49 @@ class Dataset(models.Model):
                     if df[col].dtype in ['int64', 'float64']:
                         mean = df[col].mean()
                         std = df[col].std()
+                        preprocessing_info['feature_params'][col] = {
+                            'normalization': {
+                                'mean': float(mean),
+                                'std': float(std),
+                                'type': 'standard'
+                            }
+                        }
                         if std != 0:
                             df[col] = (df[col] - mean) / std
             
             # Get target values and normalize if needed
             y = df[self.target].values
-            normalization_params = {}
-            
             if normalize and df[self.target].dtype in ['int64', 'float64']:
-                y, norm_params = self.normalize_target(y)
-                normalization_params[self.target] = norm_params
+                y_min = np.min(y)
+                y_max = np.max(y)
+                y_range = y_max - y_min
+                
+                preprocessing_info['target_params'] = {
+                    'min': float(y_min),
+                    'max': float(y_max),
+                    'range': float(y_range)
+                }
+                
+                if y_range != 0:
+                    y = (y - y_min) / y_range
             
-            # Store processed data
+            # Store processed data and preprocessing info
             self.processed_data = {
                 'X': df[features_to_process].values.tolist(),
                 'y': y.tolist(),
                 'feature_names': features_to_process,
                 'target_name': self.target,
-                'preprocessing': {
-                    'normalize': normalize,
-                    'handle_missing': handle_missing,
-                    'encode_categorical': encode_categorical,
-                    'normalization_params': normalization_params
-                }
+                'preprocessing': preprocessing_info,
+                'original_sample': original_data.iloc[0].to_dict()  # Store sample of original data
             }
             self.save()
             
+            return True
+            
         except Exception as e:
             print(f"Error processing dataset: {str(e)}")
+            self.processed_data = None
+            self.save()
             raise
     
     def get_preprocessing_info(self):
@@ -332,11 +451,14 @@ class TrainingJob(models.Model):
             self.metrics = metrics
             self.save()
             
+            return True
+            
         except Exception as e:
             self.status = 'failed'
             self.error_message = str(e)
+            self.completed_at = timezone.now()
             self.save()
-            raise
+            return False
 
 class SystemStatus(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
@@ -347,6 +469,7 @@ class SystemStatus(models.Model):
     
     class Meta:
         ordering = ['-timestamp']
+        verbose_name_plural = 'System Statuses'
     
     def __str__(self):
         return f"System Status at {self.timestamp}"
