@@ -407,29 +407,33 @@ def predict(request, model_id):
             
             # Make prediction
             try:
-                predictions = model.predict(input_dict)
+                predictions = model.predict(input_dict, dataset=dataset)
+                
+                # Handle different model types
+                if model.model_type == 'logistic':
+                    # For logistic regression, return both predictions and probabilities
+                    return JsonResponse({
+                        'predictions': predictions['predictions'],
+                        'probabilities': predictions['probabilities']
+                    })
+                else:
+                    # For linear regression, return just the predictions
+                    # Ensure predictions is a scalar or list for JSON serialization
+                    if isinstance(predictions, np.ndarray) and predictions.size == 1:
+                        predictions_serializable = float(predictions.item())
+                    elif isinstance(predictions, np.ndarray):
+                        predictions_serializable = predictions.tolist()
+                    else:
+                        predictions_serializable = predictions
+                    
+                    return JsonResponse({
+                        'predictions': predictions_serializable
+                    })
+                
             except Exception as e:
                 return JsonResponse({
                     'error': f'Error making prediction: {str(e)}'
                 }, status=500)
-            
-            # Always denormalize prediction to get original scale
-            target_stats = dataset.get_statistics().get('target_stats', {})
-            if target_stats:
-                mean = target_stats.get('mean', 0)
-                std = target_stats.get('std', 1)
-                predictions = predictions * std + mean
-            
-            # If single prediction, return as scalar
-            if len(predictions) == 1:
-                predictions = float(predictions[0])
-            
-            return JsonResponse({
-                'predictions': predictions.tolist() if isinstance(predictions, np.ndarray) else predictions,
-                'features_used': selected_features,
-                'feature_info': feature_info,
-                'target_stats': target_stats  # Include target stats for reference
-            })
             
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON data'}, status=400)
