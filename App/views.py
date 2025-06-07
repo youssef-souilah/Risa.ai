@@ -319,6 +319,18 @@ def predict(request, model_id):
     """View for making predictions using a trained model."""
     model = get_object_or_404(AIModel, id=model_id, created_by=request.user)
     
+    # Get the last completed training job
+    last_job = model.training_jobs.filter(status='completed').order_by('-started_at').first()
+    if not last_job:
+        messages.error(request, 'This model has not been trained yet. Please train the model before making predictions.')
+        return redirect('app:model_detail', model_id=model_id)
+    
+    # Get dataset for feature information
+    dataset = last_job.dataset
+    if not dataset:
+        messages.error(request, 'Training dataset not found. Please retrain the model.')
+        return redirect('app:model_detail', model_id=model_id)
+    
     if request.method == 'POST':
         try:
             # Get input data
@@ -328,27 +340,85 @@ def predict(request, model_id):
             if not features:
                 return JsonResponse({'error': 'No features provided'}, status=400)
             
-            # Convert features to numpy array
-            X = np.array(features)
+            # Get feature information including categories
+            feature_info = {}
+            try:
+                if dataset.file.name.endswith('.csv'):
+                    df = pd.read_csv(dataset.file.path)
+                elif dataset.file.name.endswith('.xlsx'):
+                    df = pd.read_excel(dataset.file.path)
+                
+                for feature in features.keys():
+                    if feature in df.columns:
+                        feature_info[feature] = {
+                            'is_categorical': df[feature].dtype == 'object',
+                            'categories': df[feature].unique().tolist() if df[feature].dtype == 'object' else None,
+                            'original_value': features[feature]
+                        }
+            except Exception as e:
+                return JsonResponse({'error': f'Error processing feature information: {str(e)}'}, status=400)
             
-            # Validate input shape
-            if len(X.shape) == 1:
-                X = X.reshape(1, -1)  # Reshape single prediction to 2D array
-            
-            # Get feature names from the model's last training job
-            last_job = model.training_jobs.filter(status='completed').order_by('-started_at').first()
-            if not last_job:
-                return JsonResponse({'error': 'Model has not been trained yet'}, status=400)
-            
+            # Get selected features from the training job
             selected_features = last_job.parameters.get('selected_features', [])
-            if len(selected_features) != X.shape[1]:
+            if not selected_features:
+                return JsonResponse({'error': 'No features were selected during training'}, status=400)
+            
+            # Verify all required features are provided
+            missing_features = set(selected_features) - set(features.keys())
+            if missing_features:
                 return JsonResponse({
-                    'error': f'Expected {len(selected_features)} features, got {X.shape[1]}',
-                    'expected_features': selected_features
+                    'error': f'Missing required features: {", ".join(missing_features)}'
                 }, status=400)
             
+            # Convert features to model input format in the correct order
+            X = []
+            for feature in selected_features:
+                value = features[feature]
+                
+                # Handle categorical features
+                if feature_info[feature]['is_categorical']:
+                    # Convert categorical value to numerical using the same encoding as training
+                    categories = feature_info[feature]['categories']
+                    try:
+                        value = categories.index(value)
+                    except ValueError:
+                        return JsonResponse({
+                            'error': f'Invalid category for {feature}. Valid categories are: {categories}'
+                        }, status=400)
+                
+                try:
+                    X.append(float(value))
+                except (ValueError, TypeError):
+                    return JsonResponse({
+                        'error': f'Invalid value for {feature}. Expected a number.'
+                    }, status=400)
+            
+            # Convert to numpy array and reshape
+            X = np.array(X).reshape(1, -1)
+            
+            # Verify input shape matches model's expected shape
+            if X.shape[1] != len(selected_features):
+                return JsonResponse({
+                    'error': f'Input shape mismatch. Expected {len(selected_features)} features, got {X.shape[1]}.'
+                }, status=400)
+            
+            # Convert to dictionary format for prediction
+            input_dict = dict(zip(selected_features, X[0]))
+            
             # Make prediction
-            predictions = model.predict(X)
+            try:
+                predictions = model.predict(input_dict)
+            except Exception as e:
+                return JsonResponse({
+                    'error': f'Error making prediction: {str(e)}'
+                }, status=500)
+            
+            # Always denormalize prediction to get original scale
+            target_stats = dataset.get_statistics().get('target_stats', {})
+            if target_stats:
+                mean = target_stats.get('mean', 0)
+                std = target_stats.get('std', 1)
+                predictions = predictions * std + mean
             
             # If single prediction, return as scalar
             if len(predictions) == 1:
@@ -356,7 +426,9 @@ def predict(request, model_id):
             
             return JsonResponse({
                 'predictions': predictions.tolist() if isinstance(predictions, np.ndarray) else predictions,
-                'features_used': selected_features
+                'features_used': selected_features,
+                'feature_info': feature_info,
+                'target_stats': target_stats  # Include target stats for reference
             })
             
         except json.JSONDecodeError:
@@ -367,13 +439,41 @@ def predict(request, model_id):
             return JsonResponse({'error': f'Prediction error: {str(e)}'}, status=500)
     
     # For GET requests, show prediction form
-    # Get feature names from the model's last training job
-    last_job = model.training_jobs.filter(status='completed').order_by('-started_at').first()
-    selected_features = last_job.parameters.get('selected_features', []) if last_job else []
+    # Get feature information including categories
+    feature_info = {}
+    try:
+        if dataset.file.name.endswith('.csv'):
+            df = pd.read_csv(dataset.file.path)
+        elif dataset.file.name.endswith('.xlsx'):
+            df = pd.read_excel(dataset.file.path)
+        
+        selected_features = last_job.parameters.get('selected_features', [])
+        if not selected_features:
+            messages.error(request, 'No features were selected during training')
+            return redirect('app:model_detail', model_id=model_id)
+        
+        for feature in selected_features:
+            if feature in df.columns:
+                feature_info[feature] = {
+                    'is_categorical': df[feature].dtype == 'object',
+                    'categories': df[feature].unique().tolist() if df[feature].dtype == 'object' else None,
+                    'min': float(df[feature].min()) if df[feature].dtype != 'object' else None,
+                    'max': float(df[feature].max()) if df[feature].dtype != 'object' else None,
+                    'mean': float(df[feature].mean()) if df[feature].dtype != 'object' else None,
+                    'description': f"Enter {feature}" + 
+                                 (f" (categories: {', '.join(map(str, df[feature].unique()))})" 
+                                  if df[feature].dtype == 'object' else
+                                  f" (range: {df[feature].min():.2f} to {df[feature].max():.2f})")
+                }
+    except Exception as e:
+        messages.error(request, f'Error loading feature information: {str(e)}')
+        return redirect('app:model_detail', model_id=model_id)
     
     return render(request, 'views/predict.html', {
         'model': model,
-        'features': selected_features
+        'features': selected_features,
+        'feature_info': feature_info,
+        'feature_info_json': json.dumps(feature_info)
     })
 
 @login_required
