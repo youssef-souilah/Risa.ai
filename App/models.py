@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 import json
 import numpy as np
-from .ml_models import LinearRegression
+from .ml_models import LinearRegression, LogisticRegression
 from django.utils import timezone
 import pandas as pd
 
@@ -40,7 +40,12 @@ class AIModel(models.Model):
                 y = y.ravel()
             
             print(f"AIModel.train - X shape: {X.shape}, y shape: {y.shape}")
+            print(f"DEBUG: AIModel.train - type(y) before model.fit: {type(y)}")
             
+            # Defensive check: Ensure y is not callable before passing to fit
+            if callable(y):
+                raise TypeError(f"Error: 'y' is unexpectedly callable. Type: {type(y)}. This occurred before calling model.fit.")
+
             if self.model_type == 'linear':
                 # Initialize model with parameters
                 model = LinearRegression(
@@ -60,7 +65,22 @@ class AIModel(models.Model):
                 self.save()
                 
             elif self.model_type == 'logistic':
-                raise NotImplementedError("Logistic Regression not implemented yet")
+                # Initialize model with parameters
+                model = LogisticRegression(
+                    alpha=self.parameters.get('alpha', 0.01),
+                    iterations=self.parameters.get('iterations', 1000)
+                )
+                
+                # Train the model
+                model.fit(X, y)
+                
+                # Calculate accuracy (classification accuracy)
+                self.accuracy = model.score(X, y) * 100
+                
+                # Save the trained model parameters
+                self.parameters = model.get_params()
+                self.status = 'active'
+                self.save()
             else:
                 raise ValueError(f"Unsupported model type: {self.model_type}")
             
@@ -158,7 +178,7 @@ class AIModel(models.Model):
                 
         return predictions
     
-    def predict(self, input_data):
+    def predict(self, input_data, dataset=None):
         """Make predictions using the trained model."""
         try:
             # Preprocess the input data
@@ -181,6 +201,39 @@ class AIModel(models.Model):
                 
                 # Postprocess predictions to original scale
                 return self.postprocess_output(predictions)
+                
+            elif self.model_type == 'logistic':
+                # Create model instance with saved parameters
+                model = LogisticRegression(
+                    alpha=self.parameters.get('alpha', 0.01),
+                    iterations=self.parameters.get('iterations', 1000)
+                )
+                
+                # Set the trained parameters
+                model.set_params(self.parameters)
+                
+                # Make predictions
+                predictions = model.predict(X)
+                probabilities = model.predict_proba(X)
+
+                # Get inverse mapping for target if it was encoded
+                inverse_target_mapping = None
+                if dataset and dataset.processed_data and 'preprocessing' in dataset.processed_data and \
+                   'target_categorical_mapping' in dataset.processed_data['preprocessing']:
+                    inverse_target_mapping = dataset.processed_data['preprocessing']['target_categorical_mapping']['inverse_mapping']
+
+                if inverse_target_mapping:
+                    # Convert numerical predictions back to original categorical labels
+                    categorical_predictions = [inverse_target_mapping.get(int(p), str(p)) for p in predictions]
+                else:
+                    # If target was not categorically encoded, return as is (should be numerical already)
+                    categorical_predictions = predictions.tolist()
+                
+                # Return both predictions (as categorical) and probabilities
+                return {
+                    'predictions': categorical_predictions,
+                    'probabilities': probabilities.tolist()
+                }
             else:
                 raise ValueError(f"Prediction not implemented for {self.model_type}")
             
@@ -318,8 +371,51 @@ class Dataset(models.Model):
                         if std != 0:
                             df[col] = (df[col] - mean) / std
             
-            # Get target values and normalize if needed
+            # After all preprocessing, ensure all feature columns are numerical.
+            # This catches any columns that might still be 'object' dtype (strings) due to unhandled cases
+            # or if 'encode_categorical' was not selected for a categorical column.
+            for col in features_to_process:
+                if df[col].dtype == 'object':
+                    # Attempt to convert to numeric, coercing errors will turn non-convertible values into NaN
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+
+                    # If there are still NaNs after coercion, and missing values are handled,
+                    # fill them. If not handled, it means a string slipped through or was not encoded.
+                    if df[col].isnull().any():
+                        if handle_missing:
+                            # For numerical columns, fill with mean. For categorical that were not encoded, this is an issue.
+                            # But since we are explicitly converting to numeric here, this branch implies a conversion failure.
+                            if df[col].dtype == 'float64': # It means it became float due to conversion, but has NaNs
+                                fill_value = df[col].mean() if not pd.isna(df[col].mean()) else 0.0
+                                df[col] = df[col].fillna(fill_value)
+                            else:
+                                # This case should ideally not be hit if pd.to_numeric(errors='coerce') works as expected.
+                                # It implies a column that still has non-numeric values after coercion.
+                                raise ValueError(f"Feature '{col}' contains non-numerical values after conversion attempt. "
+                                                 f"Please ensure 'Encode Categorical' is enabled for this feature, "
+                                                 f"or check for unexpected data in your dataset.")
+                        else:
+                            raise ValueError(f"Feature '{col}' contains non-numerical values after conversion attempt and missing values are not handled. "
+                                             f"Value example: {original_data[col].iloc[df[col].isnull().values.argmax()]}. "
+                                             f"Please enable 'Encode Categorical' or 'Handle Missing Values' for this feature.")
+
+            # Get target values and normalize or encode if needed
             y = df[self.target].values
+
+            # Handle categorical target variable
+            if encode_categorical and df[self.target].dtype == 'object':
+                unique_target_values = df[self.target].unique()
+                target_mapping = {v: i for i, v in enumerate(unique_target_values)}
+                preprocessing_info['target_categorical_mapping'] = {
+                    'mapping': target_mapping,
+                    'inverse_mapping': {i: v for v, i in target_mapping.items()}
+                }
+                y = df[self.target].map(target_mapping).values
+            elif df[self.target].dtype == 'object': # If not encoded and still object type, raise error
+                raise ValueError(f"Target feature '{self.target}' contains non-numerical values ('{df[self.target].iloc[0]}'). "
+                                 f"Please ensure 'Encode Categorical' is enabled when processing the dataset if your target is categorical.")
+
+            # Normalize numerical target features
             if normalize and df[self.target].dtype in ['int64', 'float64']:
                 y_min = np.min(y)
                 y_max = np.max(y)
@@ -375,7 +471,30 @@ class Dataset(models.Model):
         
         # Convert processed data to numpy arrays
         X = np.array(self.processed_data['X'], dtype=np.float64)
-        y = np.array(self.processed_data['y'], dtype=np.float64)
+        
+        # Convert y to numeric, coercing errors to NaN, then fill NaNs if any
+        y_raw = self.processed_data['y']
+        print(f"DEBUG: get_data - Type of y_raw (from processed_data['y']): {type(y_raw)}")
+        
+        # Explicitly convert to Series before to_numeric
+        temp_y_series = pd.Series(y_raw)
+        print(f"DEBUG: get_data - Type of temp_y_series (after pd.Series(y_raw)): {type(temp_y_series)}")
+        
+        y_series = pd.to_numeric(temp_y_series, errors='coerce') 
+        print(f"DEBUG: get_data - Type of y_series (after pd.to_numeric): {type(y_series)}")
+        
+        if y_series.isnull().any():
+            # If there are NaNs after coercion, it means some non-numeric values slipped through
+            # This should ideally be caught by the process method, but as a fallback, we fill them.
+            # For categorical targets, a NaN usually indicates an unmapped value or a data issue.
+            # We'll fill with 0, assuming 0 is a valid class for binary classification, or a reasonable default for regression.
+            y = y_series.fillna(0.0)
+        else:
+            y = y_series
+            
+        print(f"DEBUG: get_data - Type of y before final np.array conversion: {type(y)}")
+        y = np.array(y, dtype=np.float64)
+        print(f"DEBUG: get_data - Type of y after final np.array conversion: {type(y)}")
         
         # Ensure y is a 1D array
         if len(y.shape) > 1:
