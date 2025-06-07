@@ -2,89 +2,173 @@
 
 {% block title %}Make Predictions - {{ model.name }}{% endblock %}
 
+{% load static %}
+{% load custom_filters %}
+
 {% block content %}
-<div class="container mt-4">
-    <h2>Make Predictions with {{ model.name }}</h2>
-    
-    {% if not features %}
-    <div class="alert alert-warning">
-        This model has not been trained yet. Please train the model before making predictions.
-    </div>
-    {% else %}
-    <div class="card">
-        <div class="card-body">
-            <form id="predictionForm">
-                <div class="row">
+<div class="container mx-auto px-4 py-8">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-white">Make Predictions</h1>
+                <p class="text-gray-400">Use {{ model.name }} to make predictions</p>
+            </div>
+            <a href="{% url 'app:model_detail' model.id %}" 
+               class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                Back to Model
+            </a>
+        </div>
+
+        {% if not features %}
+        <div class="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-4">
+            <p class="text-yellow-400">This model has not been trained yet. Please train the model before making predictions.</p>
+        </div>
+        {% else %}
+        <div class="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-red-800/20">
+            <form id="predictionForm" class="space-y-6">
+                {% csrf_token %}
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {% for feature in features %}
-                    <div class="col-md-4 mb-3">
-                        <label for="{{ feature }}" class="form-label">{{ feature }}</label>
-                        <input type="number" step="any" class="form-control" id="{{ feature }}" name="{{ feature }}" required>
+                    <div class="space-y-2">
+                        <label for="{{ feature }}" class="block text-sm font-medium text-gray-300">
+                            {{ feature }}
+                        </label>
+                        
+                        {% if feature_info|get_item:feature|get_item:"is_categorical" %}
+                        <select class="mt-1 block w-full rounded-md bg-gray-900/50 border border-red-800/30 text-white shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm"
+                                id="{{ feature }}" 
+                                name="{{ feature }}" 
+                                required>
+                            <option value="">Select {{ feature }}</option>
+                            {% for category in feature_info|get_item:feature|get_item:"categories" %}
+                            <option value="{{ category }}">{{ category }}</option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
+                        <input type="number" 
+                               class="mt-1 block w-full rounded-md bg-gray-900/50 border border-red-800/30 text-white shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm"
+                               id="{{ feature }}" 
+                               name="{{ feature }}" 
+                               step="any"
+                               min="{{ feature_info|get_item:feature|get_item:'min' }}"
+                               max="{{ feature_info|get_item:feature|get_item:'max' }}"
+                               placeholder="Enter {{ feature }}"
+                               required>
+                        <p class="mt-1 text-sm text-gray-400">
+                            Range: {{ feature_info|get_item:feature|get_item:"min" }} to {{ feature_info|get_item:feature|get_item:"max" }}
+                        </p>
+                        {% endif %}
+                        
+                        <div class="hidden text-sm text-red-400" id="{{ feature }}-error">
+                            Please provide a valid value for {{ feature }}.
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
-                <button type="submit" class="btn btn-primary">Predict</button>
+
+                <div class="pt-4">
+                    <button type="submit" 
+                            class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                        Make Prediction
+                    </button>
+                </div>
             </form>
-            
-            <div id="predictionResult" class="mt-4" style="display: none;">
-                <h4>Prediction Result</h4>
-                <div class="alert alert-info">
-                    <strong>Predicted Value:</strong> <span id="predictedValue"></span>
+
+            <div id="predictionResult" class="mt-6 hidden">
+                <div class="rounded-md bg-green-900/20 p-4 border border-green-800/30">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-green-400">Prediction Result</h3>
+                            <div class="mt-2 text-sm text-green-300">
+                                <p>The predicted value is: <strong id="predictionValue" class="font-semibold"></strong></p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            
-            <div id="errorMessage" class="mt-4" style="display: none;">
-                <div class="alert alert-danger">
-                    <span id="errorText"></span>
+
+            <div id="errorResult" class="mt-6 hidden">
+                <div class="rounded-md bg-red-900/20 p-4 border border-red-800/30">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-red-400">Error</h3>
+                            <div class="mt-2 text-sm text-red-300">
+                                <p id="errorMessage"></p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
+        {% endif %}
     </div>
-    {% endif %}
 </div>
 
-{% if features %}
+{% block extra_js %}
 <script>
-document.getElementById('predictionForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('predictionForm');
+    const predictionResult = document.getElementById('predictionResult');
+    const predictionValue = document.getElementById('predictionValue');
+    const errorResult = document.getElementById('errorResult');
+    const errorMessage = document.getElementById('errorMessage');
     
-    // Get all feature values
-    const features = {};
-    {% for feature in features %}
-    features['{{ feature }}'] = parseFloat(document.getElementById('{{ feature }}').value);
-    {% endfor %}
-    
-    try {
-        const response = await fetch('{% url "app:predict" model.id %}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': '{{ csrf_token }}'
-            },
-            body: JSON.stringify({
-                features: Object.values(features)
-            })
-        });
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
         
-        const data = await response.json();
+        // Hide previous results
+        predictionResult.classList.add('hidden');
+        errorResult.classList.add('hidden');
         
-        if (response.ok) {
-            // Show prediction result
-            document.getElementById('predictionResult').style.display = 'block';
-            document.getElementById('errorMessage').style.display = 'none';
-            document.getElementById('predictedValue').textContent = data.predictions;
-        } else {
-            // Show error message
-            document.getElementById('predictionResult').style.display = 'none';
-            document.getElementById('errorMessage').style.display = 'block';
-            document.getElementById('errorText').textContent = data.error;
+        // Collect form data
+        const formData = {};
+        const featureInfo = JSON.parse('{{ feature_info_json|escapejs }}');
+        
+        for (const [feature, info] of Object.entries(featureInfo)) {
+            const input = document.getElementById(feature);
+            formData[feature] = input.value;
         }
-    } catch (error) {
-        // Show error message
-        document.getElementById('predictionResult').style.display = 'none';
-        document.getElementById('errorMessage').style.display = 'block';
-        document.getElementById('errorText').textContent = 'An error occurred while making the prediction.';
-    }
+        
+        try {
+            const response = await fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({ features: formData })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                predictionValue.textContent = data.predictions;
+                predictionResult.classList.remove('hidden');
+                errorResult.classList.add('hidden');
+            } else {
+                errorMessage.textContent = data.error;
+                predictionResult.classList.add('hidden');
+                errorResult.classList.remove('hidden');
+            }
+        } catch (error) {
+            errorMessage.textContent = 'An error occurred while making the prediction. Please try again.';
+            predictionResult.classList.add('hidden');
+            errorResult.classList.remove('hidden');
+        }
+    });
 });
 </script>
-{% endif %}
+{% endblock %}
 {% endblock %} 
